@@ -153,6 +153,8 @@ end
 --               2016-04-07 KS      Create function input as path to wav file
 --               2016-04-21 KS      Rename function, add announcement for
 --                                  first and second digit after delimiter
+--               2016-04-26 KS      Remove the combined value announcement
+--                                  after delimiter
 ----------------------------------------------------------------------------
 local function announce_lowest_cell_voltage(wav_warning)
 
@@ -163,29 +165,32 @@ local function announce_lowest_cell_voltage(wav_warning)
   if volt_post_delimiter_has_2_digits() then
 
 
-	if (volt_post_delimiter_first_digit == 0) then
+		if volt_post_delimiter_has_2_digits() then
 
-	  -- If the value after delimiter has 2 digits and the first number zero,
-	  -- the value should be announced divided into single numbers.
-	  -- Example: 4.[05] Volts = announcing: zero, fife
-      playNumber(volt_post_delimiter_first_digit, 0)
-      playNumber(volt_post_delimiter_second_digit, 1)
 
-	else
+			-- If the value after delimiter has 2 digits and the first number zero,
+			-- the value should be announced divided into single numbers.
+			-- Example: 4.[05] Volts = announcing: zero, fife
+			playNumber(volt_post_delimiter_first_digit, 0)
+			playNumber(volt_post_delimiter_second_digit, 1)
 
-	  -- If the value after delimiter has 2 digits and the first number is not zero,
-	  -- the value should be announced as combined 2 digit number.
-	  -- Example: 4.[18] Volts = announcing: eighteen
-	  playNumber(volt_post_delimiter_first_digit .. volt_post_delimiter_second_digit, 1)
 
-	end
+		else
+
+			-- If the value after delimiter has no second digit (=nil),
+			-- the value should be announced as combined 2 digit number.
+			-- Therefore it has to be filled up with zero at second digit.
+			-- Example: 4.[2] Volts = announcing: twenty ([2]&0)
+			playNumber(volt_post_delimiter_first_digit .. 0, 1)
+
+		end
 
   else
 
     -- If the value after delimiter has no second digit (=nil),
-	-- the value should be announced as combined 2 digit number.
-	-- Therefore it has to be filled up with zero at second digit.
-	-- Example: 4.[2] Volts = announcing: twenty ([2]&0)
+	  -- the value should be announced as combined 2 digit number.
+	  -- Therefore it has to be filled up with zero at second digit.
+  	-- Example: 4.[2] Volts = announcing: twenty ([2]&0)
     playNumber(volt_post_delimiter_first_digit .. 0, 1)
 
   end
