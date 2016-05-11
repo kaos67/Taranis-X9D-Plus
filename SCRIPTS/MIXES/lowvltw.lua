@@ -1,29 +1,57 @@
+-----------------------------------------------------------------------------
+-- This script is build for the Taranis X9D PLUS. It offers the ability to
+-- play the lowest cell value of the battery attached to the receiver.
+-- To get the the precise value of the lowest cell an additional telemetry
+-- module named "FrSky FLVSS LiPo Voltage Sensor With Smart Port" is needed.
+-- This module offers the sensor "lowest" which should be used as voltage
+-- input sensor for this script.
+--
+-- To activate the voltage announcement either a logical or a hardware switch
+-- can be used and selected as switch input for this script.
+--
+-- Depending on which switch is used the voltage announcement includes an
+-- additional warning text or not.
+--
+-- Version: 1.00
+--
+-- (c) 2016 Kai Schmitz, Velbert, Germany (schmitz.kai@me.com)
+--
+-- License: MIT, see http://choosealicense.com/licenses/mit/
+-----------------------------------------------------------------------------
+
+
 ----------------------------------------------------------------------------
 -- Do some Init's
 ----------------------------------------------------------------------------
-local trigger_is_active                   = false
-local volt_pre_delimiter                  = 0
-local volt_post_delimiter                 = 0
-local volt_post_delimiter_first_digit     = 0
-local volt_post_delimiter_second_digit    = 0
-local play_next_time                      = 0
-local play_delay                          = 500
-local wav_lwstcellvoltwarn                = "/SOUNDS/en/lwstcellvolt.wav"
-local wav_lwstcell                        = "/SOUNDS/en/lwstcell.wav"
-local wav_delimiter                       = "/SOUNDS/en/system/0112.wav"
+local switch_status                     = false
+local logic_switch_is_active            = false
+local switch_logic_on_position          = 1024 -- (off 0 | on 1024)
+local switch_2pos_on_position           = 1024 -- (SW↑ 0 | SW↓ 1024)
+local switch_3pos_on_position           = 1024 -- (SW↑ -1024 | SW- 0 | SW↓ 1024)
+local volt_pre_delimiter                = 0
+local volt_post_delimiter_digits_count  = 0
+local volt_post_delimiter_first_digit   = 0
+local volt_post_delimiter_second_digit  = 0
+local play_next_time                    = 0
+local play_delay                        = 1500
+local wav_lwstcellvoltzero              = "/SOUNDS/en/batfault.wav"
+local wav_lwstcellvoltwarn              = "/SOUNDS/en/lwstcellvolt.wav"
+local wav_lwstcell                      = "/SOUNDS/en/lwstcell.wav"
+local wav_delimiter                     = "/SOUNDS/en/system/0112.wav"
 
 ----------------------------------------------------------------------------
 -- Script input/output
 --
---  input:  [1] Logical switch (i.e. L1)
---          [2] Physical switch (i.e. SH)
---
---  output: [1] Semaphore, indicating if switch is active (100) or not(0)
+--  input:  [1] Telemetry sensor (i.e. Cmin)
+--          [2] Logical switch (i.e. L1)
+--          [3] Physical 2 way switch (i.e. SH)
+--              or
+--          [4] Physical 3 way switch (i.e. SC)
 ----------------------------------------------------------------------------
-local inputs    = { { "Sensor"    , SOURCE },
-                    { "Switch [L]", SOURCE },
-                    { "Switch [S]", SOURCE } }
-local outputs   =   { "SwOn" }
+local inputs    = { { "Sensor"   , SOURCE },
+                    { "SW_logic" , SOURCE },
+                    { "SW_2pos"  , SOURCE },
+                    { "SW_3pos"  , SOURCE } }
 
 
 ----------------------------------------------------------------------------
@@ -51,7 +79,7 @@ end
 
 
 ----------------------------------------------------------------------------
--- NAME        : volt_float_to_single_int(sensor_voltage)
+-- NAME        : change_volt_float_to_single_digits(sensor_voltage)
 --
 -- DESCRIPTION : Splits the float voltage value
 --               into three integers (= Int1.Int2Int3)
@@ -73,45 +101,137 @@ end
 --                                  after delimiter to get the right values
 --                                  i.e. at 3.05 Volts
 ----------------------------------------------------------------------------
-local function volt_float_to_single_int(sensor_voltage)
+local function change_volt_float_to_single_digits(sensor)
 
-  print("*** sensor_voltage: " .. sensor_voltage)
-
-  local int_a, int_b = math.modf(sensor_voltage)
-  -- local int_a, int_b = math.modf(getValue(sensor_voltage))
+  local int_a, int_b = math.modf(sensor)
 
   volt_pre_delimiter = int_a
-  print("*** int_b: " .. round(int_b, 2))
-  volt_post_delimiter_first_digit = tonumber(string.sub(round(int_b, 2), 3, 3))
+
+  volt_post_delimiter_first_digit  = tonumber(string.sub(round(int_b, 2), 3, 3))
   volt_post_delimiter_second_digit = tonumber(string.sub(round(int_b, 2), 4, 4))
-  print("*** volt_post_delimiter_first_digit: " .. volt_post_delimiter_first_digit)
-  print("*** volt_post_delimiter_second_digit: " .. volt_post_delimiter_second_digit)
+
 end
 
 
 ----------------------------------------------------------------------------
--- NAME        : volt_post_delimiter_has_2_digits()
+-- NAME        : get_volt_post_delimiter_digits()
 --
--- DESCRIPTION : Checks if second digit after volt delimiter is nil
+-- DESCRIPTION : Checks if digits after volt delimiter are nil
 --
 -- Author      : Kai Schmitz (KS), Velbert, Germany
 --
 -- OUTPUT      : true/false
 --
--- PROCESS     : [1]  checks if second digit after volt delimiter is nil
+-- PROCESS     : [1]  checks if second digit after volt delimiter is not nil
+--               [2]  checks if first digit after volt delimiter is not nil
+--               [3]  returns zero if both digit after volt delimiter are nil
 --
 -- CHANGES     : DATE       AUTHOR  DETAIL
 --               2016-04-21 KS      Original Code
+--               2016-05-11 KS      Improve check and return behavior
 ----------------------------------------------------------------------------
-local function volt_post_delimiter_has_2_digits()
+local function get_volt_post_delimiter_digits()
 
-  if (volt_post_delimiter_second_digit == nil) then
+  if (volt_post_delimiter_second_digit ~= nil) then
 
-    return false
+	print("****************************************")
+	print("volt_post_delimiter_second_digit ~= nil")
+	print("****************************************")
+
+    return 2
+
+  elseif (volt_post_delimiter_first_digit ~= nil) then
+
+	print("****************************************")
+	print("volt_post_delimiter_first_digit ~= nil")
+	print("****************************************")
+
+    return 1
 
   else
 
-    return true
+  	print("****************************************")
+	print("volt_post_delimiter_second_digit == nil")
+	print("volt_post_delimiter_first_digit  == nil")
+	print("****************************************")
+
+    return 0
+
+  end
+
+end
+
+
+----------------------------------------------------------------------------
+-- NAME        : play_voltage()
+--
+-- DESCRIPTION : Combines some sounds with actual voltage values
+--               to announce the actual lowest cell voltage.
+--
+-- Author      : Kai Schmitz (KS), Velbert, Germany
+--
+-- PROCESS     : [1]  play a intro
+--               [2]  call function to play volt value
+--
+-- CHANGES     : DATE       AUTHOR  DETAIL
+--               2016-04-06 KS      Original Code
+--               2016-04-07 KS      Create function input as path to wav file
+--               2016-04-21 KS      Rename function, add announcement for
+--                                  first and second digit after delimiter
+--               2016-04-26 KS      Remove the combined value announcement
+--                                  after delimiter
+----------------------------------------------------------------------------
+local function play_voltage()
+
+  volt_post_delimiter_digits_count = get_volt_post_delimiter_digits()
+
+  if (volt_pre_delimiter == 0) or (volt_pre_delimiter == nil) then
+
+    playFile(wav_lwstcellvoltzero)
+
+  elseif (volt_pre_delimiter > 0) then
+
+    if logic_switch_is_active  then
+
+      playFile(wav_lwstcellvoltwarn)
+
+    else
+
+      playFile(wav_lwstcell)
+
+    end
+
+    if (volt_post_delimiter_digits_count == 0) then
+
+      playNumber(volt_pre_delimiter, 1)
+
+    else
+
+      playNumber(volt_pre_delimiter, 0)
+
+    end
+
+    if (volt_post_delimiter_digits_count ~= 0) then
+
+      playFile(wav_delimiter)
+
+      if (volt_post_delimiter_digits_count == 2) then
+
+        -- If the value after delimiter has 2 digits and the first number zero,
+        -- the value should be announced divided into single numbers.
+        -- Example: 4.[05] Volts = announcing: zero, fife
+        playNumber(volt_post_delimiter_first_digit, 0)
+        playNumber(volt_post_delimiter_second_digit, 1)
+
+      elseif (volt_post_delimiter_digits_count == 1) then
+
+        -- If the value after delimiter has no second digit (=nil),
+        -- the value should be announced as single digit number.
+        playNumber(volt_post_delimiter_first_digit, 1)
+
+      end
+
+    end
 
   end
 
@@ -138,65 +258,72 @@ end
 
 
 ----------------------------------------------------------------------------
--- NAME        : announce_lowest_cell_voltage()	()
+-- NAME        : time_to_play()
 --
--- DESCRIPTION : Combines some sounds with actual voltage values
---               to announce the actual lowest cell voltage.
+-- DESCRIPTION : Checks if the delay time between to announces is still
+--               active or not
 --
 -- Author      : Kai Schmitz (KS), Velbert, Germany
 --
--- PROCESS     : [1]  play a intro
---               [2]  call function to play volt value
+-- PROCESS     : [1]  checks if delay is over
+--               [2]  initiates setup of next playtime
 --
 -- CHANGES     : DATE       AUTHOR  DETAIL
---               2016-04-06 KS      Original Code
---               2016-04-07 KS      Create function input as path to wav file
---               2016-04-21 KS      Rename function, add announcement for
---                                  first and second digit after delimiter
---               2016-04-26 KS      Remove the combined value announcement
---                                  after delimiter
+--               2016-04-30 KS      Original Code
 ----------------------------------------------------------------------------
-local function announce_lowest_cell_voltage(wav_warning)
+local function time_to_play()
 
-  playFile(wav_warning)
-  playNumber(volt_pre_delimiter, 0)
-  playFile(wav_delimiter)
+  if getTime() >= play_next_time then
 
-  if volt_post_delimiter_has_2_digits() then
-
-
-		if volt_post_delimiter_has_2_digits() then
-
-
-			-- If the value after delimiter has 2 digits and the first number zero,
-			-- the value should be announced divided into single numbers.
-			-- Example: 4.[05] Volts = announcing: zero, fife
-			playNumber(volt_post_delimiter_first_digit, 0)
-			playNumber(volt_post_delimiter_second_digit, 1)
-
-
-		else
-
-			-- If the value after delimiter has no second digit (=nil),
-			-- the value should be announced as combined 2 digit number.
-			-- Therefore it has to be filled up with zero at second digit.
-			-- Example: 4.[2] Volts = announcing: twenty ([2]&0)
-			playNumber(volt_post_delimiter_first_digit .. 0, 1)
-
-		end
+    set_play_next_time()
+    return true
 
   else
 
-    -- If the value after delimiter has no second digit (=nil),
-	  -- the value should be announced as combined 2 digit number.
-	  -- Therefore it has to be filled up with zero at second digit.
-  	-- Example: 4.[2] Volts = announcing: twenty ([2]&0)
-    playNumber(volt_post_delimiter_first_digit .. 0, 1)
+    return false
 
   end
 
 end
 
+
+----------------------------------------------------------------------------
+-- NAME        : switch_is_active(switch_logic, switch_2pos, switch_3pos)
+--
+-- DESCRIPTION : Checks if one of the possible input switches is active
+--
+-- Author      : Kai Schmitz (KS), Velbert, Germany
+--
+-- INPUTS      : switch_logic (Voltage of logical input switch)
+--               switch_2pos  (Voltage of 2 way input switch)
+--               switch_3pos  (Voltage of 3 way input switch)
+--
+-- PROCESS     : [1]  checks if one switch is active
+--               [2]  set semaphore if the logic switch is active
+--               [3]  returns if a switch is active or not
+--
+-- CHANGES     : DATE       AUTHOR  DETAIL
+--               2016-04-30 KS      Original Code
+----------------------------------------------------------------------------
+local function switch_is_active(switch_logic, switch_2pos, switch_3pos)
+
+  if (switch_logic == switch_logic_on_position) then
+
+    logic_switch_is_active = true
+
+  elseif (switch_2pos  == switch_2pos_on_position) or
+         (switch_3pos  == switch_3pos_on_position) then
+
+    logic_switch_is_active = false
+    return true
+
+  else
+
+    return false
+
+  end
+
+end
 
 ----------------------------------------------------------------------------
 -- NAME        : run(trigger)
@@ -209,56 +336,25 @@ end
 --
 -- INPUTS      : trigger  (physical or logical switch)
 --
--- PROCESS     : [1]  find out which trigger and check if not active
---               [2]    if next play time
---               [3]      set active
---               [4]      split real volt to integer
---               [5]      play warning by announcing the cell voltage
---               [6]      set next play time
---               [7]    else reset output and set to not active
+-- PROCESS     : [1]  checks if switch is active and the play delay is over
+--               [2]  processing the sensor voltage into pronounceable values
+--               [3]  announce t the sensor value
 --
 -- CHANGES     : DATE       AUTHOR  DETAIL
 --               2016-04-06 KS      Original Code
 --               2016-04-07 KS      Added logical AND physical switch as input
+--               2016-04-30 KS      Complete redesign of this script
 ----------------------------------------------------------------------------
-local function run(sensor, trigger_LogSw, trigger_PhySw)
+local function run(sensor, switch_logic, switch_2pos, switch_3pos)
 
-  if (trigger_LogSw > 512) or (trigger_PhySw > 512) and not trigger_is_active then
+  if switch_is_active(switch_logic, switch_2pos, switch_3pos) and time_to_play() then
 
-
-    if getTime() >= play_next_time then
-
-      trigger_is_active = true
-      volt_float_to_single_int(sensor)
-
-      if trigger_LogSw > 512 then  -- if logical switch is active
-
-        announce_lowest_cell_voltage(wav_lwstcellvoltwarn)
-
-      elseif trigger_PhySw > 512 then  -- if physical switch is active
-
-        announce_lowest_cell_voltage(wav_lwstcell)
-
-      end
-
-      set_play_next_time()
-
-    end
-
-  elseif trigger_LogSw and trigger_PhySw < 512 then
-
-    trigger_is_active                = false
-    volt_pre_delimiter               = 0
-    volt_post_delimiter              = 0
-    volt_post_delimiter_first_digit  = 0
-    volt_post_delimiter_second_digit = 0
+    change_volt_float_to_single_digits(sensor)
+    play_voltage()
 
   end
 
-	-- return the trigger_is_active output (100 or 0)
-	return (trigger_is_active and 1024 or 0)
-
 end
 
-return { run=run, input=inputs, output=outputs }
+return { run=run, input=inputs }
 
