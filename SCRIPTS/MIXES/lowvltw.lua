@@ -12,7 +12,7 @@
 -- Depending on which switch is used the voltage announcement includes an
 -- additional warning text or not.
 --
--- Version: 1.00
+-- Version: 1.01
 --
 -- (c) 2016 Kai Schmitz, Velbert, Germany (schmitz.kai@me.com)
 --
@@ -24,7 +24,8 @@
 -- Do some Init's
 ----------------------------------------------------------------------------
 local switch_status                     = false
-local logic_switch_is_active            = false
+local logical_switch_is_active          = false
+local physical_switch_is_active         = true
 local switch_logic_on_position          = 1024 -- (off 0 | on 1024)
 local switch_2pos_on_position           = 1024 -- (SW↑ 0 | SW↓ 1024)
 local switch_3pos_on_position           = 1024 -- (SW↑ -1024 | SW- 0 | SW↓ 1024)
@@ -35,7 +36,8 @@ local volt_post_delimiter_second_digit  = 0
 local play_next_time                    = 0
 local play_delay                        = 1500
 local wav_lwstcellvoltzero              = "/SOUNDS/en/batfault.wav"
-local wav_lwstcellvoltwarn              = "/SOUNDS/en/lwstcellvolt.wav"
+local wav_lwstcellvoltcritical          = "/SOUNDS/en/lwstcvcrit.wav"
+local wav_lwstcellwarn                  = "/SOUNDS/en/lwstcellwrn.wav"
 local wav_lwstcell                      = "/SOUNDS/en/lwstcell.wav"
 local wav_delimiter                     = "/SOUNDS/en/system/0112.wav"
 
@@ -134,26 +136,13 @@ local function get_volt_post_delimiter_digits()
 
   if (volt_post_delimiter_second_digit ~= nil) then
 
-	print("****************************************")
-	print("volt_post_delimiter_second_digit ~= nil")
-	print("****************************************")
-
     return 2
 
   elseif (volt_post_delimiter_first_digit ~= nil) then
 
-	print("****************************************")
-	print("volt_post_delimiter_first_digit ~= nil")
-	print("****************************************")
-
     return 1
 
   else
-
-  	print("****************************************")
-	print("volt_post_delimiter_second_digit == nil")
-	print("volt_post_delimiter_first_digit  == nil")
-	print("****************************************")
 
     return 0
 
@@ -180,6 +169,8 @@ end
 --                                  first and second digit after delimiter
 --               2016-04-26 KS      Remove the combined value announcement
 --                                  after delimiter
+--               2016-04-15 KS      Value announcement now even when logical
+--                                  and physical switch is active
 ----------------------------------------------------------------------------
 local function play_voltage()
 
@@ -191,11 +182,15 @@ local function play_voltage()
 
   elseif (volt_pre_delimiter > 0) then
 
-    if logic_switch_is_active  then
+    if logical_switch_is_active and not physical_switch_is_active then
 
-      playFile(wav_lwstcellvoltwarn)
+      playFile(wav_lwstcellvoltcritical)
 
-    else
+    elseif logical_switch_is_active and physical_switch_is_active then
+
+      playFile(wav_lwstcellwarn)
+
+    elseif not logical_switch_is_active and physical_switch_is_active then
 
       playFile(wav_lwstcell)
 
@@ -304,22 +299,39 @@ end
 --
 -- CHANGES     : DATE       AUTHOR  DETAIL
 --               2016-04-30 KS      Original Code
+--               2016-05-15 KS      Correction of return statements, now
+--                                  switches always stay on
 ----------------------------------------------------------------------------
 local function switch_is_active(switch_logic, switch_2pos, switch_3pos)
 
   if (switch_logic == switch_logic_on_position) then
 
-    logic_switch_is_active = true
-
-  elseif (switch_2pos  == switch_2pos_on_position) or
-         (switch_3pos  == switch_3pos_on_position) then
-
-    logic_switch_is_active = false
-    return true
+    logical_switch_is_active  = true
 
   else
 
+    logical_switch_is_active  = false
+
+  end
+
+  if (switch_2pos  == switch_2pos_on_position) or
+     (switch_3pos  == switch_3pos_on_position) then
+
+    physical_switch_is_active = true
+
+  else
+
+    physical_switch_is_active = false
+
+  end
+
+  if not (logical_switch_is_active or physical_switch_is_active) then
+
     return false
+
+  else
+
+    return true
 
   end
 
